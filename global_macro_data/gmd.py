@@ -2,163 +2,308 @@ import os
 import requests
 import pandas as pd
 import io
-import re
+from typing import Optional, Union, List
+import sys
 
-# Allowed quarters
-VALID_QUARTERS = ["01", "03", "06", "09", "12"]
+# Valid variables list
+VALID_VARIABLES = [
+    # GDP and related
+    "nGDP", "rGDP", "rGDP_USD", "rGDP_pc", "deflator",
+    # Consumption
+    "cons", "cons_GDP", "rcons",
+    # Investment
+    "inv", "inv_GDP", "finv", "finv_GDP",
+    # Trade
+    "exports", "exports_GDP", "imports", "imports_GDP",
+    # Current account and exchange rates
+    "CA", "CA_GDP", "USDfx", "REER",
+    # Government
+    "govexp", "govexp_GDP", "govrev", "govrev_GDP",
+    "govtax", "govtax_GDP", "govdef", "govdef_GDP",
+    "govdebt", "govdebt_GDP",
+    # Prices and inflation
+    "HPI", "CPI", "infl",
+    # Demographics and labor
+    "pop", "unemp",
+    # Interest rates
+    "strate", "ltrate", "cbrate",
+    # Money supply
+    "M0", "M1", "M2", "M3", "M4",
+    # Crises
+    "CurrencyCrisis", "BankingCrisis", "SovDebtCrisis"
+]
 
-def gmd(version=None, country=None, variables=None, show_preview=True):
+def get_available_versions() -> List[str]:
+    """Get list of available versions from GitHub"""
+    try:
+        versions_url = (
+            "https://raw.githubusercontent.com/KMueller-Lab/"
+            "Global-Macro-Database/refs/heads/main/data/helpers/versions.csv"
+        )
+        response = requests.get(versions_url)
+        if response.status_code != 200:
+            raise Exception("Could not fetch versions")
+        
+        versions_df = pd.read_csv(io.StringIO(response.text))
+        versions = versions_df['versions'].tolist()
+        return sorted(versions, reverse=True)
+    except Exception as e:
+        raise Exception(f"Error fetching versions: {str(e)}")
+
+def get_current_version() -> str:
+    """Get the current version of the dataset"""
+    versions = get_available_versions()
+    return versions[0] if versions else None
+
+def list_variables() -> None:
+    """Display list of available variables and their descriptions"""
+    print("\nAvailable variables:\n")
+    print("-" * 90)
+    print(f"{'Variable':<17} Description")
+    print("-" * 90)
+    
+    descriptions = {
+        "nGDP": "Nominal Gross Domestic Product",
+        "rGDP": "Real Gross Domestic Product, in 2010 prices",
+        "rGDP_pc": "Real Gross Domestic Product per Capita",
+        "rGDP_USD": "Real Gross Domestic Product in USD",
+        "deflator": "GDP deflator",
+        "cons": "Total Consumption",
+        "rcons": "Real Total Consumption",
+        "cons_GDP": "Total Consumption as % of GDP",
+        "inv": "Total Investment",
+        "inv_GDP": "Total Investment as % of GDP",
+        "finv": "Fixed Investment",
+        "finv_GDP": "Fixed Investment as % of GDP",
+        "exports": "Total Exports",
+        "exports_GDP": "Total Exports as % of GDP",
+        "imports": "Total Imports",
+        "imports_GDP": "Total Imports as % of GDP",
+        "CA": "Current Account Balance",
+        "CA_GDP": "Current Account Balance as % of GDP",
+        "USDfx": "Exchange Rate against USD",
+        "REER": "Real Effective Exchange Rate, 2010 = 100",
+        "govexp": "Government Expenditure",
+        "govexp_GDP": "Government Expenditure as % of GDP",
+        "govrev": "Government Revenue",
+        "govrev_GDP": "Government Revenue as % of GDP",
+        "govtax": "Government Tax Revenue",
+        "govtax_GDP": "Government Tax Revenue as % of GDP",
+        "govdef": "Government Deficit",
+        "govdef_GDP": "Government Deficit as % of GDP",
+        "govdebt": "Government Debt",
+        "govdebt_GDP": "Government Debt as % of GDP",
+        "HPI": "House Price Index",
+        "CPI": "Consumer Price Index, 2010 = 100",
+        "infl": "Inflation Rate",
+        "pop": "Population",
+        "unemp": "Unemployment Rate",
+        "strate": "Short-term Interest Rate",
+        "ltrate": "Long-term Interest Rate",
+        "cbrate": "Central Bank Policy Rate",
+        "M0": "M0 Money Supply",
+        "M1": "M1 Money Supply",
+        "M2": "M2 Money Supply",
+        "M3": "M3 Money Supply",
+        "M4": "M4 Money Supply",
+        "SovDebtCrisis": "Sovereign Debt Crisis",
+        "CurrencyCrisis": "Currency Crisis",
+        "BankingCrisis": "Banking Crisis"
+    }
+    
+    for var in sorted(VALID_VARIABLES):
+        print(f"{var:<17} {descriptions.get(var, '')}")
+    
+    print("-" * 90)
+
+def list_countries() -> None:
+    """Display list of available countries and their ISO codes"""
+    try:
+        # Load isomapping from the package directory
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        isomapping_path = os.path.join(
+            os.path.dirname(script_dir), 'isomapping.csv'
+        )
+        isomapping = pd.read_csv(isomapping_path)
+        
+        print("\nCountry and territories" + " " * 27 + "Code")
+        print("-" * 60)
+        
+        for _, row in isomapping.iterrows():
+            print(f"{row['countryname']:<50} {row['ISO3']}")
+        
+        print("-" * 60)
+    except Exception as e:
+        raise Exception(f"Error loading country list: {str(e)}")
+
+def gmd(
+    variables: Optional[Union[str, List[str]]] = None,
+    country: Optional[Union[str, List[str]]] = None,
+    version: Optional[str] = None,
+    raw: bool = False,
+    iso: bool = False,
+    vars: bool = False
+) -> Optional[pd.DataFrame]:
     """
     Download and filter Global Macro Data.
     
     Parameters:
-    - version (str): Dataset version in format 'YYYY_MM' (e.g., '2025_01').
-                   If None, the latest available version is used.
-                   Note: '01' quarter is only valid for year 2025.
-    - country (str or list): ISO3 country code(s) (e.g., "SGP" or ["MRT", "SGP"]).
-                          If None, returns all countries.
-    - variables (list): List of variable codes to include (e.g., ["rGDP", "unemp"]).
-                      If None, all variables are included.
-    - show_preview (bool): If True and no other parameters are provided, shows a preview.
+    - variables (str or list): Variable code(s) to include
+        (e.g., "rGDP" or ["rGDP", "unemp"])
+    - country (str or list): ISO3 country code(s)
+        (e.g., "SGP" or ["MRT", "SGP"])
+    - version (str): Dataset version in format 'YYYY_MM'
+        (e.g., '2025_01')
+    - raw (bool): If True, download raw data for a single variable
+    - iso (bool): If True, display list of available countries
+    - vars (bool): If True, display list of available variables
     
     Returns:
-    - pd.DataFrame: The requested data.
+    - pd.DataFrame: The requested data, or None if displaying lists
     """
-    # Check if this is a default call (no specific parameters)
-    default_call = (version is None and country is None and variables is None and show_preview)
-    
     base_url = "https://www.globalmacrodata.com"
-
-    # Process version parameter or find latest
+    
+    # Handle special display options
+    if iso:
+        list_countries()
+        return None
+    
+    if vars:
+        list_variables()
+        return None
+    
+    # Validate variables before proceeding
+    if variables:
+        if isinstance(variables, str):
+            variables = [variables]
+        
+        # Validate variables
+        invalid_vars = [
+            var for var in variables if var not in VALID_VARIABLES
+        ]
+        if invalid_vars:
+            print("Global Macro Database by Müller et. al (2025)")
+            print("Website: https://www.globalmacrodata.com\n")
+            print(f"Invalid variable code: {invalid_vars[0]}")
+            print(
+                "\nTo see the list of valid variable codes, "
+                "use: gmd(vars=True)"
+            )
+            sys.exit(1)
+    
+    # Get current version if not specified
     if version is None:
-        # Automatically select the latest available dataset
-        year, quarter = find_latest_data(base_url)
-        version = f"{year}_{quarter:02d}"
+        version = get_current_version()
+    elif version.lower() == "current":
+        version = get_current_version()
     else:
-        # Validate the version format
-        if not re.match(r'^\d{4}_(01|03|06|09|12)$', version):
-            raise ValueError("Version must be in format 'YYYY_MM' where MM is one of: 01, 03, 06, 09, 12")
+        # Check if version exists
+        available_versions = get_available_versions()
+        if version not in available_versions:
+            print("Global Macro Database by Müller et. al (2025)")
+            print("Website: https://www.globalmacrodata.com\n")
+            print(f"Error: {version} is not valid")
+            print(f"Available versions are: {', '.join(available_versions)}")
+            print(f"The current version is: {get_current_version()}")
+            sys.exit(1)
+    
+    # Handle raw data option
+    if raw:
+        if (not variables or 
+            (isinstance(variables, list) and len(variables) > 1)):
+            print("Global Macro Database by Müller et. al (2025)")
+            print("Website: https://www.globalmacrodata.com\n")
+            print("Warning: raw requires specifying exactly one variable")
+            print("Note: Raw data is only accessed variable-wise using: gmd [variable], raw")
+            print("To download the full data documentation: https://www.globalmacrodata.com/GMD.xlsx")
+            sys.exit(1)
         
-        # Parse the version
-        year_str, quarter = version.split('_')
-        year = int(year_str)
+        if isinstance(variables, list):
+            variables = variables[0]
         
-        # Special validation for quarter 01
-        if quarter == "01" and year != 2025:
-            raise ValueError("Quarter '01' is only valid for year 2025")
-
-    # Construct URL
-    data_url = f"{base_url}/GMD_{version}.csv"
-    print(f"Downloading: {data_url}")
-
+        data_url = f"{base_url}/{variables}_{version}.csv"
+        print(f"Importing raw data for variable: {variables}")
+    else:
+        # Handle single variable case for efficiency
+        if isinstance(variables, list) and len(variables) == 1:
+            variables = variables[0]
+            data_url = f"{base_url}/{variables}_{version}.csv"
+            print(f"Importing data for variable: {variables}")
+        else:
+            data_url = f"{base_url}/GMD_{version}.csv"
+    
     # Download data
-    response = requests.get(data_url)
-    if response.status_code != 200:
-        raise FileNotFoundError(f"Error: Data file not found at {data_url}")
-
+    try:
+        response = requests.get(data_url)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print("Global Macro Database by Müller et. al (2025)")
+        print("Website: https://www.globalmacrodata.com\n")
+        print(f"Error downloading data: {str(e)}")
+        sys.exit(1)
+    
     # Read the data
     df = pd.read_csv(io.StringIO(response.text))
-
+    
     # Filter by country if specified
     if country:
-        # Convert single country to list for consistent handling
         if isinstance(country, str):
             country = [country]
         
-        # Convert all country codes to uppercase
         country = [c.upper() for c in country]
         
-        # Check if all specified countries exist in the dataset
-        invalid_countries = [c for c in country if c not in df["ISO3"].unique()]
+        # Validate country codes
+        invalid_countries = [
+            c for c in country if c not in df["ISO3"].unique()
+        ]
         if invalid_countries:
-            # Load isomapping for better error handling
-            try:
-                # Try to load isomapping from the expected location
-                script_dir = os.path.dirname(os.path.abspath(__file__))
-                isomapping_path = os.path.join(script_dir, 'isomapping.csv')
-                isomapping = pd.read_csv(isomapping_path)
-                
-                # Display helpful error message with available countries
-                print(f"Error: Invalid country code(s): {', '.join(invalid_countries)}. Available country codes are:")
-                for i, row in isomapping.iterrows():
-                    print(f"{row['ISO3']}: {row['countryname']}")
-            except Exception:
-                # If isomapping.csv can't be loaded, use the country list from the dataset
-                print(f"Error: Invalid country code(s): {', '.join(invalid_countries)}. Available country codes are:")
-                country_list = sorted(set(zip(df["ISO3"], df["countryname"])))
-                for iso3, name in country_list:
-                    if pd.notna(iso3) and pd.notna(name):
-                        print(f"{iso3}: {name}")
-            
-            raise ValueError(f"Invalid country code(s): {', '.join(invalid_countries)}")
+            print("Global Macro Database by Müller et. al (2025)")
+            print("Website: https://www.globalmacrodata.com\n")
+            print(f"Error: Invalid country code '{invalid_countries[0]}'")
+            print("\nTo see the list of valid country codes, use: gmd(iso=True)")
+            sys.exit(1)
         
-        # Filter for multiple countries
         df = df[df["ISO3"].isin(country)]
         print(f"Filtered data for countries: {', '.join(country)}")
     
     # Filter by variables if specified
-    if variables:
+    if variables and not raw:
+        if isinstance(variables, str):
+            variables = [variables]
+        
         # Always include identifier columns
         required_cols = ["ISO3", "countryname", "year"]
-        all_cols = required_cols + [var for var in variables if var not in required_cols]
+        all_cols = required_cols + [
+            var for var in variables if var not in required_cols
+        ]
         
-        # Check if all requested variables exist in the dataset
-        missing_vars = [var for var in variables if var not in df.columns]
-        if missing_vars:
-            print(f"Warning: The following requested variables are not in the dataset: {missing_vars}")
-            print("Available variables are:")
-            for i, col in enumerate(sorted(df.columns)):
-                if i > 0 and i % 4 == 0:
-                    print("")  # Line break every 4 columns
-                print(f"- {col}", end="  ")
-            print("\n")
-        
-        # Filter to only include requested variables (plus identifiers)
+        # Filter to only include requested variables
         existing_vars = [var for var in all_cols if var in df.columns]
         df = df[existing_vars]
-        print(f"Selected {len(existing_vars)} variables")
     
-    # Only show the preview for default calls (no specific parameters)
-    if default_call:
-        # Get Singapore data from 2000-2020
-        sample_df = df[(df["ISO3"] == "SGP") & (df["year"] >= 2000) & (df["year"] <= 2020)]
-        
-        if len(sample_df) > 0:
-            print(f"Singapore (SGP) data, 2000-2020")
-            print(f"{len(sample_df)} rows out of {len(df)} total rows in the dataset")
-            
-            # Display the data with specified columns, sorted by year
-            pd.set_option('display.max_columns', None)
-            pd.set_option('display.width', 1000)
-            
-            # Define the preview columns in the exact order requested
-            preview_cols = ["year", "ISO3", "countryname", "nGDP", "rGDP", "pop", "unemp", "infl", 
-                            "exports", "imports", "govdebt_GDP", "ltrate"]
-            
-            # Check which columns exist in the dataset
-            available_cols = [col for col in preview_cols if col in sample_df.columns]
-            
-            # Sort by year and display with available columns
-            print(sample_df[available_cols].sort_values(by="year"))
-        else:
-            print("No data available for Singapore (SGP) between 2000-2020")
-
-    print(f"Final dataset: {len(df)} observations of {len(df.columns)} variables")
+    # Clean up missing variables
+    df = df.dropna(axis=1, how='all')
+    
+    # Display dataset information
+    if len(df) == 0:
+        print(f"The database has no data on {variables} for {country}")
+        return None
+    
+    if raw:
+        n_sources = len(df.columns) - 8  # Subtract identifier columns
+        print(f"Final dataset: {len(df)} observations of {n_sources} sources")
+    else:
+        print(
+            f"Final dataset: {len(df)} observations of "
+            f"{len(df.columns)} variables"
+        )
+    
+    print(f"Version: {version}")
+    
+    # Sort and order columns
+    df = df.sort_values(['countryname', 'year'])
+    id_cols = ['ISO3', 'countryname', 'year']
+    other_cols = [col for col in df.columns if col not in id_cols]
+    df = df[id_cols + other_cols]
+    
     return df
-
-def find_latest_data(base_url):
-    """ Attempt to find the most recent available dataset """
-    import datetime
-
-    current_year = datetime.datetime.now().year
-    for year in range(current_year, 2019, -1):  # Iterate backward by year
-        for quarter in ["12", "09", "06", "03", "01"]:
-            url = f"{base_url}/GMD_{year}_{quarter}.csv"
-            try:
-                response = requests.head(url, timeout=5)
-                if response.status_code == 200:
-                    return year, int(quarter)
-            except:
-                continue
-    
-    raise FileNotFoundError("No available dataset found on the server.")

@@ -4,17 +4,14 @@ __pycache__/
 *$py.class
 
 # Distribution / packaging
-*.egg-info/
 dist/
 build/
 *.egg
 
-# Virtual environments
-venv/
-env/
-.env
-.venv
-ENV/
+# Test cache
+.pytest_cache/
+.coverage
+htmlcov/
 
 # IDE related
 .idea/
@@ -24,3 +21,7 @@ ENV/
 
 # OS related
 .DS_Store
+Thumbs.db
+
+# Keep egg-info for package metadata
+!global_macro_data.egg-info/
