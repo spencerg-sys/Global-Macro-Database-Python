@@ -1,10 +1,9 @@
 Metadata-Version: 2.4
 Name: global-macro-data
-Version: 0.3.1
-Summary: Global Macro Database by Karsten Müller, Chenzi Xu, Mohamed Lehbib and Ziliang Chen (2025)
+Version: 3.0.0
+Summary: Global Macro Database Python implementation by Bojun Geng
 Home-page: https://github.com/KMueller-Lab/Global-Macro-Database-Python
-Author: Yangbo Wang
-Author-email: wangyangbo@ruc.edu.cn
+Author: Bojun Geng
 Classifier: Programming Language :: Python :: 3
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Operating System :: OS Independent
@@ -12,8 +11,11 @@ Requires-Python: >=3.6
 Description-Content-Type: text/markdown
 Requires-Dist: requests
 Requires-Dist: pandas
+Requires-Dist: numpy
+Requires-Dist: matplotlib
+Requires-Dist: openpyxl
+Requires-Dist: pyshp
 Dynamic: author
-Dynamic: author-email
 Dynamic: classifier
 Dynamic: description
 Dynamic: description-content-type
@@ -22,102 +24,56 @@ Dynamic: requires-dist
 Dynamic: requires-python
 Dynamic: summary
 
-# The Global Macro Database (Python Package)
-<a href="https://www.globalmacrodata.com" target="_blank" rel="noopener noreferrer">
-    <img src="https://img.shields.io/badge/Website-Visit-blue?style=flat&logo=google-chrome" alt="Website Badge">
-</a>
+# Global Macro Database (Python)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+Independent Python implementation of the Global Macro Database pipeline, aligned to Stata do/ado semantics but not dependent on the Stata repository runtime.
 
-[Link to paper 📄](https://www.globalmacrodata.com/research-paper.html)
+## Installation
 
-This repository complements paper, **Müller, Xu, Lehbib, and Chen (2025)**, which introduces a panel dataset of **46 macroeconomic variables across 243 countries** from historical records beginning in the year **1086** until **2024**, including projections through the year **2030**.
-
-## Features
-
-- **Unparalleled Coverage**: Combines data from **32 contemporary sources** (e.g., IMF, World Bank, OECD) with **78 historical datasets**.
-- **Extensive Variables**: GDP, inflation, government finance, trade, employment, interest rates, and more.
-- **Harmonized Data**: Resolves inconsistencies and splices all available data together.
-- **Scheduled Updates**: Regular releases ensure data reliability.
-- **Full Transparency**: All code is open source and available in this repository.
-- **Accessible Formats**: Provided in `.dta`, `.csv` and as **<a href="https://github.com/KMueller-Lab/Global-Macro-Database" target="_blank" rel="noopener noreferrer">Stata</a>
-/<a href="https://github.com/KMueller-Lab/Global-Macro-Database-Python" target="_blank" rel="noopener noreferrer">Python</a>/<a href="https://github.com/KMueller-Lab/Global-Macro-Database-R" target="_blank" rel="noopener noreferrer">R</a> package**.
-
-## Data access
-
-<a href="https://www.globalmacrodata.com/data.html" target="_blank" rel="noopener noreferrer">Download via website</a>
-
-**Python package:**
-```
-pip install global_macro_data
+```bash
+pip install -e .
 ```
 
-**How to use (examples)**
+## Main APIs
+
 ```python
-from global_macro_data import gmd
+import global_macro_data as gmd
+```
 
-# Get data from latest available version
-df = gmd()
+- `gmd.download_source(source, ...)`: download one supported raw source.
+- `gmd.clean_source(source, ...)`: clean one source into GMD clean format.
+- `gmd.rebuild_clean_sources(...)`: batch clean sources (from `source_list.csv` or explicit list).
+- `gmd.combine_variable(varname, ...)`: build one final chainlinked variable.
+- `gmd.combine_all(...)`: build all combine outputs from bundled pipeline specs.
+- `gmd.build_documentation_all(...)`: build documentation outputs.
+- `gmd.merge_final_data(...)`: produce `data_final.dta`.
+- `gmd.run_master_pipeline(...)`: run initialize/clean/combine/document/final stages.
 
-# Get data from a specific version
-df = gmd(version="2025_01")
+## Minimal Example
 
-# Get data for a specific country
-df = gmd(country="USA")
+```python
+from pathlib import Path
+import global_macro_data as gmd
 
-# Get data for multiple countries
-df = gmd(country=["USA", "CHN", "DEU"])
+data_root = Path("path/to/data")  # contains raw/helpers
+work = Path("path/to/work")
 
-# Get specific variables
-df = gmd(variables=["rGDP", "infl", "unemp"])
+gmd.rebuild_clean_sources(
+    data_raw_dir=data_root / "raw",
+    data_clean_dir=work / "clean",
+    data_helper_dir=data_root / "helpers",
+    data_temp_dir=work / "tempfiles",
+)
 
-# Get raw data for a single variable
-df = gmd(variables="rGDP", raw=True)
+gmd.combine_all(
+    data_clean_dir=work / "clean",
+    data_temp_dir=work / "tempfiles",
+    data_final_dir=work / "final",
+)
 
-# List available variables and their descriptions
-gmd(vars=True)
-
-# List available countries and their ISO codes
-gmd(iso=True)
-
-# Combine parameters
-df = gmd(
-    version="2025_01",
-    country=["USA", "CHN"],
-    variables=["rGDP", "unemp", "CPI"]
+gmd.merge_final_data(
+    data_temp_dir=work / "tempfiles",
+    data_final_dir=work / "final",
+    data_helper_dir=data_root / "helpers",
 )
 ```
-
-## Parameters
-- **variables (str or list)**: Variable code(s) to include (e.g., "rGDP" or ["rGDP", "unemp"])
-- **country (str or list)**: ISO3 country code(s) (e.g., "SGP" or ["MRT", "SGP"])
-- **version (str)**: Dataset version in format 'YYYY_MM' (e.g., '2025_01'). If None or "current", uses the latest version
-- **raw (bool)**: If True, download raw data for a single variable
-- **iso (bool)**: If True, display list of available countries
-- **vars (bool)**: If True, display list of available variables
-
-## Release schedule 
-| Release Date | Details         |
-|--------------|-----------------|
-| 2025-01-30   | Initial release: 2025_01 |
-| 2025-04-01   | 2025_03         |
-| 2025-07-01   | 2025_06         |
-| 2025-10-01   | 2025_09         |
-| 2026-01-01   | 2025_12         |
-
-## Citation
-
-To cite this dataset, please use the following reference:
-
-```bibtex
-@techreport{mueller2025global, 
-    title = {The Global Macro Database: A New International Macroeconomic Dataset}, 
-    author = {Müller, Karsten and Xu, Chenzi and Lehbib, Mohamed and Chen, Ziliang}, 
-    year = {2025}, 
-    type = {Working Paper}
-}
-```
-
-## Acknowledgments
-
-The development of the Global Macro Database would not have been possible without the generous funding provided by the Singapore Ministry of Education (MOE) through the PYP grants (WBS A-0003319-01-00 and A-0003319-02-00), a Tier 1 grant (A-8001749- 00-00), and the NUS Risk Management Institute (A-8002360-00-00). This financial support laid the foundation for the successful completion of this extensive project.

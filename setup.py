@@ -1,28 +1,19 @@
-import os
+﻿from pathlib import Path
 
-def read_readme():
-    if os.path.exists("README.md"):
-        with open("README.md", "r", encoding="utf-8") as f:
-            return f.read()
-    return "Global Macro Data package"
+from setuptools import find_packages, setup
 
-from setuptools import setup, find_packages
+README = Path("README.md")
+long_description = README.read_text(encoding="utf-8") if README.exists() else "Global Macro Data package"
 
 setup(
     name="global-macro-data",
-    version="0.3.1",
+    version="3.0.0",
     packages=find_packages(),
-    package_data={
-        "global_macro_data": ["isomapping.csv"],
-    },
-    install_requires=[
-        "requests",
-        "pandas"
-    ],
-    author="Yangbo Wang",
-    author_email="wangyangbo@ruc.edu.cn",
-    description="Global Macro Database by Karsten Müller, Chenzi Xu, Mohamed Lehbib and Ziliang Chen (2025)",
-    long_description=open("README.md", encoding="utf-8").read(),
+    package_data={"global_macro_data": ["*.csv", "*.txt"]},
+    install_requires=["requests", "pandas", "numpy", "matplotlib", "openpyxl", "pyshp"],
+    author="Bojun Geng",
+    description="Global Macro Database Python implementation by Bojun Geng",
+    long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/KMueller-Lab/Global-Macro-Database-Python",
     classifiers=[

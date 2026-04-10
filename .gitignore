@@ -1,27 +1,22 @@
-# Python bytecode
+gmd_submission/readme.txt
+.DS_Store
+
+# Python cache/artifacts
 __pycache__/
 *.py[cod]
-*$py.class
-
-# Distribution / packaging
-dist/
-build/
-*.egg
-
-# Test cache
+*.pyo
 .pytest_cache/
-.coverage
-htmlcov/
 
-# IDE related
-.idea/
-.vscode/
-*.swp
-*.swo
+# Packaging/build artifacts
+*.egg-info/
+build/
+dist/
 
-# OS related
-.DS_Store
-Thumbs.db
-
-# Keep egg-info for package metadata
-!global_macro_data.egg-info/
+# Local generated outputs
+data/
+output/
+phase_signoff/
+phase2_regression_*/
+*.log
+*.tmp
+*.bak
